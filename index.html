@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Petualangan Ular Cerdas</title>
+    
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Load React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <!-- Load Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Load Canvas Confetti for effects -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+    <!-- Google Fonts: Fredoka One for cartoonish look -->
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;700;900&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Nunito', sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Prevent scrolling, act like an app */
+            background-color: #1e1e1e; /* Fallback */
+            touch-action: none; /* Prevent browser touch actions like pull-to-refresh */
+        }
+        
+        h1, h2, h3, .cartoon-font {
+            font-family: 'Fredoka One', cursive;
+        }
+
+        /* Custom scrollbar for text areas */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px;}
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* Game Environment Animations */
+        @keyframes wave {
+            0% { transform: translateX(0); }
+            50% { transform: translateX(-25%); }
+            100% { transform: translateX(0); }
+        }
+        .animate-wave { animation: wave 10s ease-in-out infinite; }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        .animate-float { animation: float 3s ease-in-out infinite; }
+        
+        @keyframes float-cloud {
+            0% { transform: translateX(100vw); }
+            100% { transform: translateX(-200px); }
+        }
+        .cloud { position: absolute; opacity: 0.8; animation: float-cloud linear infinite; }
+
+        /* Character Animations */
+        @keyframes snake-dance {
+            0%, 100% { transform: rotate(0deg) scale(1); }
+            25% { transform: rotate(-15deg) scale(1.1); }
+            50% { transform: rotate(0deg) scale(1); }
+            75% { transform: rotate(15deg) scale(1.1); }
+        }
+        .anim-snake-dance { animation: snake-dance 0.5s ease-in-out infinite; }
+
+        @keyframes mouse-laugh {
+            0%, 100% { transform: translateY(0) scale(1); }
+            50% { transform: translateY(-20px) scale(1.2); }
+        }
+        .anim-mouse-laugh { animation: mouse-laugh 0.4s ease-in-out infinite; }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-10px); }
+            20%, 40%, 60%, 80% { transform: translateX(10px); }
+        }
+        .anim-shake { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
+
+        @keyframes flash {
+            0%, 100% { opacity: 0; background-color: transparent; }
+            10%, 90% { opacity: 1; background-color: rgba(255, 255, 255, 0.8); }
+        }
+        .anim-flash { animation: flash 0.3s ease-out; position: absolute; inset: 0; z-index: 50; pointer-events: none; }
+
+        @keyframes drop {
+            0% { transform: translateY(0) rotate(0); opacity: 1; }
+            100% { transform: translateY(100vh) rotate(45deg); opacity: 0; }
+        }
+        .anim-drop { animation: drop 1s forwards ease-in; }
+
+        .game-container {
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(to bottom, #87CEEB, #E0F6FF);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 3D Button styles */
+        .btn-3d {
+            transition: all 0.1s;
+            box-shadow: 0 6px 0 rgba(0,0,0,0.2);
+        }
+        .btn-3d:active {
+            transform: translateY(6px);
+            box-shadow: 0 0px 0 rgba(0,0,0,0.2);
+        }
+
+        .platform {
+            background: #8B4513;
+            border-bottom: 8px solid #5C2E0B;
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+            position: relative;
+            transition: all 0.3s ease;
+        }
+        .platform::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; height: 10px;
+            background: #A0522D;
+            border-radius: 12px 12px 0 0;
+        }
+
+        .grass-top {
+            position: absolute;
+            top: -10px; left: -5px; right: -5px; height: 15px;
+            background: #4ade80;
+            border-radius: 10px;
+            border-bottom: 4px solid #22c55e;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // Simple Audio Engine using Web Audio API to avoid external dependencies
+        const AudioEngine = (() => {
+            let ctx = null;
+            let enabled = true;
+
+            const init = () => {
+                if (!ctx) {
+                    ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (ctx.state === 'suspended') ctx.resume();
+            };
+
+            const playOscillator = (freq, type, duration, vol = 0.1, slideFreq = null) => {
+                if (!enabled || !ctx) return;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, ctx.currentTime);
+                if (slideFreq) {
+                    osc.frequency.exponentialRampToValueAtTime(slideFreq, ctx.currentTime + duration);
+                }
+
+                gain.gain.setValueAtTime(vol, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
+
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                
+                osc.start();
+                osc.stop(ctx.currentTime + duration);
+            };
+
+            return {
+                enable: () => { enabled = true; init(); },
+                disable: () => { enabled = false; },
+                toggle: () => { enabled = !enabled; if(enabled) init(); return enabled; },
+                isEnabled: () => enabled,
+                
+                playClick: () => playOscillator(600, 'sine', 0.1, 0.1),
+                playCorrect: () => {
+                    playOscillator(440, 'sine', 0.1, 0.1);
+                    setTimeout(() => playOscillator(660, 'sine', 0.1, 0.1), 100);
+                    setTimeout(() => playOscillator(880, 'sine', 0.2, 0.1), 200);
+                },
+                playWrong: () => {
+                    playOscillator(300, 'sawtooth', 0.3, 0.1, 100);
+                },
+                playMove: () => playOscillator(200, 'sine', 0.1, 0.05, 300),
+                playThunder: () => {
+                    if (!enabled || !ctx) return;
+                    const bufferSize = ctx.sampleRate * 1; // 1 second
+                    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+                    const data = buffer.getChannelData(0);
+                    for (let i = 0; i < bufferSize; i++) {
+                        data[i] = Math.random() * 2 - 1; // White noise
+                    }
+                    const noise = ctx.createBufferSource();
+                    noise.buffer = buffer;
+                    const filter = ctx.createBiquadFilter();
+                    filter.type = 'lowpass';
+                    filter.frequency.value = 1000;
+                    const gain = ctx.createGain();
+                    gain.gain.setValueAtTime(0.5, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 1);
+                    
+                    noise.connect(filter);
+                    filter.connect(gain);
+                    gain.connect(ctx.destination);
+                    noise.start();
+                },
+                playBGM: () => {
+                    // Simulating BGM is complex with pure Web Audio without buffers,
+                    // We will skip continuous BGM to avoid annoying beep-boops, 
+                    // and focus on rich sound effects for interactions.
+                }
+            };
+        })();
+
+        const QUESTION_BANK = [
+            // LEVEL 1: PEMULA (Pengenalan)
+            { id: 1, level: 1, text: "Aturan atau pedoman yang mengatur tingkah laku manusia dalam masyarakat disebut...", options: ["Hukum alam", "Norma", "Kebiasaan", "Nasihat"], answer: 1, explanation: "Norma adalah aturan yang mengikat warga kelompok dalam masyarakat." },
+            { id: 2, level: 1, text: "Tujuan utama dibuatnya norma di masyarakat adalah untuk menciptakan...", options: ["Kekacauan", "Ketertiban dan kedamaian", "Persaingan", "Perbedaan"], answer: 1, explanation: "Norma dibuat agar kehidupan bersama berjalan tertib, aman, dan harmonis." },
+            { id: 3, level: 1, text: "Norma yang bersumber dari wahyu Tuhan Yang Maha Esa disebut norma...", options: ["Kesusilaan", "Hukum", "Agama", "Kesopanan"], answer: 2, explanation: "Norma agama berasal dari ajaran kitab suci dan wahyu Tuhan." },
+            { id: 4, level: 1, text: "Suara hati nurani manusia merupakan sumber dari norma...", options: ["Agama", "Kesopanan", "Kesusilaan", "Hukum"], answer: 2, explanation: "Norma kesusilaan bersumber dari hati nurani tentang baik dan buruk." },
+            { id: 5, level: 1, text: "Norma kesopanan biasanya bersumber dari...", options: ["Undang-undang", "Kebiasaan pergaulan masyarakat", "Kitab suci", "Peraturan polisi"], answer: 1, explanation: "Norma kesopanan lahir dari tradisi dan pergaulan sehari-hari di masyarakat." },
+            { id: 6, level: 1, text: "Aturan yang dibuat oleh negara dan memiliki sanksi tegas disebut norma...", options: ["Hukum", "Agama", "Kesusilaan", "Kesopanan"], answer: 0, explanation: "Norma hukum dibuat oleh lembaga resmi negara dan sanksinya nyata/tegas." },
+            { id: 7, level: 1, text: "Sanksi bagi pelanggar norma agama adalah...", options: ["Denda uang", "Penjara", "Dosa", "Dikucilkan teman"], answer: 2, explanation: "Pelanggar norma agama akan mendapat sanksi berupa dosa dari Tuhan." },
+            { id: 8, level: 1, text: "Merasa menyesal dan bersalah adalah sanksi jika kita melanggar norma...", options: ["Kesopanan", "Hukum", "Agama", "Kesusilaan"], answer: 3, explanation: "Melanggar hati nurani (kesusilaan) akan menimbulkan rasa penyesalan mendalam." },
+            { id: 9, level: 1, text: "Sanksi berupa denda atau penjara diberikan kepada pelanggar norma...", options: ["Kesusilaan", "Kesopanan", "Hukum", "Agama"], answer: 2, explanation: "Hukum negara memiliki aparat yang berhak menghukum pelanggar dengan denda/penjara." },
+            { id: 10, level: 1, text: "Dicemooh atau dikucilkan oleh masyarakat biasanya merupakan sanksi dari pelanggaran norma...", options: ["Hukum", "Agama", "Kesopanan", "Lalu lintas"], answer: 2, explanation: "Masyarakat akan menegur atau menjauhi orang yang tidak sopan." },
+
+            // LEVEL 2: PETUALANG (Penerapan)
+            { id: 11, level: 2, text: "Rani selalu mengucapkan salam ketika bertemu guru. Sikap Rani adalah contoh penerapan norma...", options: ["Hukum", "Kesopanan", "Kesusilaan", "Agama"], answer: 1, explanation: "Mengucapkan salam adalah bentuk penghormatan dan tata krama (kesopanan)." },
+            { id: 12, level: 2, text: "Andi tidak menyontek saat ujian meskipun tidak diawasi karena ia tahu itu perbuatan curang. Andi mematuhi norma...", options: ["Kesusilaan", "Hukum", "Kesopanan", "Lalu lintas"], answer: 0, explanation: "Jujur pada diri sendiri berasal dari hati nurani (kesusilaan)." },
+            { id: 13, level: 2, text: "Sebelum masuk ke rumah orang lain, kita sebaiknya...", options: ["Langsung masuk saja", "Mengintip dari jendela", "Mengetuk pintu dan permisi", "Berteriak memanggil"], answer: 2, explanation: "Mengetuk pintu adalah adab sopan santun bertamu." },
+            { id: 14, level: 2, text: "Menghormati teman yang sedang menjalankan ibadah puasa merupakan wujud norma...", options: ["Hukum", "Agama", "Kesopanan", "Keluarga"], answer: 1, explanation: "Toleransi beragama adalah pelaksanaan perintah agama untuk saling menghargai." },
+            { id: 15, level: 2, text: "Ayah selalu memakai helm saat mengendarai sepeda motor. Ayah mematuhi norma...", options: ["Kesusilaan", "Agama", "Hukum", "Kesopanan"], answer: 2, explanation: "Memakai helm adalah aturan tertulis dalam undang-undang lalu lintas (hukum)." },
+            { id: 16, level: 2, text: "Saat makan bersama, Budi tidak mengecap (bersuara) dan makan dengan tenang. Ini sesuai dengan norma...", options: ["Kesopanan", "Hukum", "Agama", "Kesusilaan"], answer: 0, explanation: "Tata cara makan yang baik adalah bagian dari norma kesopanan." },
+            { id: 17, level: 2, text: "Berbohong kepada orang tua untuk menutupi kesalahan adalah pelanggaran terhadap norma...", options: ["Hukum", "Lalu lintas", "Kesusilaan", "Pemerintah"], answer: 2, explanation: "Berbohong mengingkari hati nurani yang tahu bahwa itu salah (kesusilaan)." },
+            { id: 18, level: 2, text: "Siswa wajib memakai seragam yang rapi ke sekolah. Ini adalah contoh...", options: ["Aturan keluarga", "Aturan sekolah", "Aturan negara", "Aturan agama"], answer: 1, explanation: "Seragam adalah aturan tata tertib yang berlaku di lingkungan sekolah." },
+            { id: 19, level: 2, text: "Membuang sampah pada tempatnya di lingkungan kampung merupakan kepatuhan pada aturan di...", options: ["Rumah", "Sekolah", "Masyarakat", "Negara"], answer: 2, explanation: "Menjaga kebersihan lingkungan sekitar adalah tanggung jawab warga masyarakat." },
+            { id: 20, level: 2, text: "Jika kita tidak sengaja merusakkan barang teman, sikap yang tepat sesuai norma adalah...", options: ["Pura-pura tidak tahu", "Menyalahkan orang lain", "Meminta maaf dan mengganti", "Lari menghindar"], answer: 2, explanation: "Bertanggung jawab atas kesalahan adalah penerapan norma kesusilaan dan kesopanan." },
+
+            // LEVEL 3: MASTER NORMA (Penalaran/Kasus)
+            { id: 21, level: 3, text: "Doni menemukan dompet jatuh di jalan yang sepi. Tidak ada orang yang melihat. Tindakan Doni yang sesuai norma kesusilaan adalah...", options: ["Mengambil uangnya", "Meninggalkannya", "Menyerahkan ke polisi/pemiliknya", "Membelikan makanan"], answer: 2, explanation: "Hati nurani yang bersih akan mendorong kita mengembalikan barang yang bukan milik kita." },
+            { id: 22, level: 3, text: "Lampu lalu lintas menyala merah, tapi jalanan sangat sepi. Sikap pengendara yang taat hukum adalah...", options: ["Tetap berhenti", "Menerobos perlahan", "Membunyikan klakson lalu jalan", "Berputar arah"], answer: 0, explanation: "Hukum harus ditaati meskipun tidak ada yang mengawasi demi keselamatan bersama." },
+            { id: 23, level: 3, text: "Kamu melihat temanmu sedang kesulitan membawa banyak buku. Tindakanmu sesuai norma kesopanan adalah...", options: ["Menertawakannya", "Menawarkan bantuan", "Melihat saja", "Melaporkan ke guru"], answer: 1, explanation: "Membantu orang yang kesulitan adalah bentuk kepedulian sosial dan sopan santun." },
+            { id: 24, level: 3, text: "Sebuah peraturan daerah melarang membuang limbah ke sungai. Tujuan utama aturan hukum ini adalah...", options: ["Menghukum warga", "Menjaga kelestarian lingkungan", "Mendapatkan uang denda", "Membuat warga takut"], answer: 1, explanation: "Hukum lingkungan dibuat untuk melindungi alam agar tidak rusak dan bermanfaat bagi semua." },
+            { id: 25, level: 3, text: "Dalam diskusi kelas, pendapatmu ditolak oleh teman-teman. Sikapmu sebaiknya...", options: ["Marah dan keluar kelas", "Menerima dengan lapang dada", "Memaksa agar diterima", "Mengejek pendapat teman"], answer: 1, explanation: "Menghargai perbedaan pendapat adalah cerminan norma kesopanan dalam demokrasi." },
+            { id: 26, level: 3, text: "Membayar pajak tepat waktu merupakan kewajiban warga negara yang diatur dalam...", options: ["Norma agama", "Norma kesusilaan", "Norma kesopanan", "Norma hukum"], answer: 3, explanation: "Pajak diatur oleh undang-undang negara secara resmi." },
+            { id: 27, level: 3, text: "Akibat sering melanggar aturan di sekolah, seorang siswa bisa mendapatkan sanksi berupa...", options: ["Penjara", "Dosa", "Teguran atau skorsing", "Denda jutaan rupiah"], answer: 2, explanation: "Sanksi sekolah disesuaikan dengan tingkat pelanggaran tata tertib edukatif." },
+            { id: 28, level: 3, text: "Apa yang terjadi jika di dalam masyarakat tidak ada norma yang berlaku?", options: ["Hidup menjadi sangat bebas dan damai", "Masyarakat akan kacau dan hukum rimba berlaku", "Ekonomi akan maju pesat", "Semua orang akan menjadi kaya"], answer: 1, explanation: "Tanpa aturan, yang kuat akan menindas yang lemah, sehingga terjadi kekacauan." },
+            { id: 29, level: 3, text: "Menaati aturan di rumah bermanfaat untuk...", options: ["Membuat orang tua pusing", "Menciptakan keluarga yang harmonis", "Mendapatkan hadiah mahal", "Terlihat hebat di depan teman"], answer: 1, explanation: "Aturan rumah dibuat agar semua anggota keluarga merasa nyaman dan rukun." },
+            { id: 30, level: 3, text: "Disiplin berarti...", options: ["Taat dan patuh pada aturan", "Melakukan sesuatu sesuka hati", "Hanya taat jika ada guru", "Menunda-nunda pekerjaan"], answer: 0, explanation: "Sikap disiplin ditunjukkan dengan kepatuhan pada aturan di manapun berada." }
+        ];
+
+        const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+        const App = () => {
+            // States
+            const [gameState, setGameState] = useState('START'); // START, NAME, MENU, MATERI, PLAY, GAMEOVER, LEVEL_COMPLETE, WIN
+            const [playerName, setPlayerName] = useState('');
+            const [score, setScore] = useState(0);
+            const [lives, setLives] = useState(3);
+            const [currentLevel, setCurrentLevel] = useState(1);
+            const [questions, setQuestions] = useState([]);
+            const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+            const [streak, setStreak] = useState(0);
+            const [audioEnabled, setAudioEnabled] = useState(true);
+            const [isFullscreen, setIsFullscreen] = useState(false);
+            
+            // Statistics for end screen
+            const [stats, setStats] = useState({ correct: 0, wrong: 0, totalQuestions: 0 });
+
+            // Game mechanics states
+            const [currentOptions, setCurrentOptions] = useState([]);
+            const [animState, setAnimState] = useState('IDLE'); // IDLE, MOVING, CORRECT, WRONG
+            const [selectedPlatform, setSelectedPlatform] = useState(null);
+            const [showExplanation, setShowExplanation] = useState(false);
+            const [explanationData, setExplanationData] = useState({ text: '', title: '', isCorrect: false, correctText: '', wrongText: '' });
+            
+            // Refs for animations
+            const containerRef = useRef(null);
+            const snakeRef = useRef(null);
+
+            // Helpers
+            const toggleAudio = () => setAudioEnabled(AudioEngine.toggle());
+            
+            const toggleFullscreen = () => {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(err => {
+                        console.log(`Error attempting to enable fullscreen: ${err.message}`);
+                    });
+                } else {
+                    if (document.exitFullscreen) document.exitFullscreen();
+                }
+            };
+
+            useEffect(() => {
+                const handleFullscreenChange = () => setIsFullscreen(!!document.fullscreenElement);
+                document.addEventListener('fullscreenchange', handleFullscreenChange);
+                return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+            }, []);
+
+            const startGame = () => {
+                // Initialize game questions for Level 1
+                AudioEngine.init();
+                AudioEngine.playClick();
+                setStats({ correct: 0, wrong: 0, totalQuestions: QUESTION_BANK.length });
+                resetGame(1);
+            };
+
+            const resetGame = (level = 1) => {
+                const levelQuestions = QUESTION_BANK.filter(q => q.level === level);
+                // Shuffle questions
+                const shuffledQuestions = levelQuestions.sort(() => Math.random() - 0.5);
+                
+                setQuestions(shuffledQuestions);
+                setCurrentLevel(level);
+                setCurrentQuestionIndex(0);
+                if (level === 1) {
+                     setScore(0);
+                     setStats({ correct: 0, wrong: 0, totalQuestions: QUESTION_BANK.length });
+                }
+                setLives(3);
+                setStreak(0);
+                setGameState('PLAY');
+                prepareQuestion(shuffledQuestions[0]);
+            };
+
+            const prepareQuestion = (question) => {
+                if (!question) return;
+                setAnimState('IDLE');
+                setSelectedPlatform(null);
+                setShowExplanation(false);
+                
+                // Shuffle options and keep track of correct answer
+                const optionsWithIndex = question.options.map((opt, i) => ({ text: opt, originalIndex: i }));
+                const shuffledOptions = optionsWithIndex.sort(() => Math.random() - 0.5);
+                setCurrentOptions(shuffledOptions);
+            };
+
+            const handleAnswer = useCallback((selectedOptIndex, platformIndex) => {
+                if (animState !== 'IDLE' || gameState !== 'PLAY' || showExplanation) return; // Prevent multiple clicks or acting outside play
+                
+                AudioEngine.playMove();
+                setSelectedPlatform(platformIndex);
+                setAnimState('MOVING');
+
+                const currentQ = questions[currentQuestionIndex];
+                const selectedOption = currentOptions[selectedOptIndex];
+                const isCorrect = selectedOption.originalIndex === currentQ.answer;
+
+                // Delay to simulate snake moving
+                setTimeout(() => {
+                    if (isCorrect) {
+                        handleCorrect(currentQ);
+                    } else {
+                        handleWrong(currentQ);
+                    }
+                }, 800); // 800ms travel time
+            }, [animState, gameState, showExplanation, questions, currentQuestionIndex, currentOptions]);
+
+            // Keyboard controls mapping
+            useEffect(() => {
+                 const handleKeyDown = (e) => {
+                      if (gameState === 'PLAY' && animState === 'IDLE' && !showExplanation) {
+                          // Arrow keys map to platforms 0-3 (from bottom to top usually, but visual order might vary. Let's map 1-4 or arrows logically)
+                          // Assuming visual order top-down is indices 0, 1, 2, 3
+                          if (e.key === '1' || e.key === 'ArrowUp') handleAnswer(0, 0);
+                          else if (e.key === '2' || e.key === 'ArrowRight') handleAnswer(1, 1);
+                          else if (e.key === '3' || e.key === 'ArrowLeft') handleAnswer(2, 2);
+                          else if (e.key === '4' || e.key === 'ArrowDown') handleAnswer(3, 3);
+                      }
+                 };
+                 window.addEventListener('keydown', handleKeyDown);
+                 return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [gameState, animState, showExplanation, handleAnswer]);
+
+
+            const handleCorrect = (currentQ) => {
+                setAnimState('CORRECT');
+                AudioEngine.playCorrect();
+                fireConfetti();
+                
+                let pointsEarned = 10;
+                let newStreak = streak + 1;
+                
+                // Streak bonuses
+                if (newStreak === 3) pointsEarned += 10;
+                if (newStreak === 5) pointsEarned += 20;
+                if (newStreak === 10) pointsEarned += 50;
+
+                setScore(s => s + pointsEarned);
+                setStreak(newStreak);
+                setStats(prev => ({ ...prev, correct: prev.correct + 1 }));
+
+                setExplanationData({
+                    title: '🎉 BENAR!',
+                    text: currentQ.explanation,
+                    isCorrect: true,
+                    correctText: 'Hebat! Jawabanmu tepat!'
+                });
+                
+                setTimeout(() => setShowExplanation(true), 1500);
+            };
+
+            const handleWrong = (currentQ) => {
+                setAnimState('WRONG');
+                AudioEngine.playWrong();
+                AudioEngine.playThunder();
+                
+                const newLives = lives - 1;
+                setLives(newLives);
+                setStreak(0);
+                setScore(s => Math.max(0, s - 5));
+                setStats(prev => ({ ...prev, wrong: prev.wrong + 1 }));
+
+                setExplanationData({
+                    title: '❌ BELUM TEPAT!',
+                    text: currentQ.explanation,
+                    isCorrect: false,
+                    wrongText: 'Coba perhatikan kembali pertanyaannya.'
+                });
+
+                setTimeout(() => setShowExplanation(true), 1500);
+            };
+
+            const nextQuestion = () => {
+                AudioEngine.playClick();
+                setShowExplanation(false);
+                
+                if (lives <= 0) {
+                    setGameState('GAMEOVER');
+                    return;
+                }
+
+                if (currentQuestionIndex + 1 < questions.length) {
+                    const nextIdx = currentQuestionIndex + 1;
+                    setCurrentQuestionIndex(nextIdx);
+                    prepareQuestion(questions[nextIdx]);
+                } else {
+                    // Level Complete
+                    if (currentLevel < 3) {
+                        setGameState('LEVEL_COMPLETE');
+                    } else {
+                        setGameState('WIN');
+                    }
+                }
+            };
+
+            const fireConfetti = () => {
+                const duration = 2000;
+                const end = Date.now() + duration;
+                const colors = ['#a864fd', '#29cdff', '#78ff44', '#ff718d', '#fdff6a'];
+
+                (function frame() {
+                    confetti({ particleCount: 5, angle: 60, spread: 55, origin: { x: 0 }, colors: colors });
+                    confetti({ particleCount: 5, angle: 120, spread: 55, origin: { x: 1 }, colors: colors });
+                    if (Date.now() < end) requestAnimationFrame(frame);
+                }());
+            };
+
+            
+            // Screen: START
+            if (gameState === 'START') {
+                return (
+                    <div className="game-container items-center justify-center bg-[url('https://www.transparenttextures.com/patterns/cartographer.png')] bg-blue-400">
+                        <div className="text-center p-8 bg-white/90 rounded-3xl shadow-2xl border-4 border-yellow-400 max-w-lg w-[90%] transform transition hover:scale-105">
+                            <div className="text-6xl mb-4 anim-snake-dance inline-block">🐍</div>
+                            <h1 className="text-3xl md:text-5xl text-green-600 mb-2 drop-shadow-md">PETUALANGAN</h1>
+                            <h2 className="text-2xl md:text-4xl text-yellow-500 mb-6 drop-shadow-md">ULAR CERDAS</h2>
+                            <p className="text-gray-600 mb-8 font-bold text-lg md:text-xl">Menaklukkan Norma dan Aturan</p>
+                            <button 
+                                onClick={() => { AudioEngine.playClick(); setGameState('NAME'); }}
+                                className="btn-3d w-full bg-green-500 hover:bg-green-600 text-white cartoon-font text-2xl py-4 rounded-xl border-b-4 border-green-700"
+                            >
+                                MULAI BERMAIN
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            // Screen: NAME INPUT
+            if (gameState === 'NAME') {
+                return (
+                    <div className="game-container items-center justify-center bg-blue-300">
+                        <div className="bg-white p-8 rounded-3xl shadow-xl text-center max-w-md w-[90%] border-4 border-blue-400">
+                            <h2 className="text-2xl cartoon-font text-blue-600 mb-6">Siapa nama kamu, petualang?</h2>
+                            <input 
+                                type="text" 
+                                value={playerName}
+                                onChange={(e) => setPlayerName(e.target.value)}
+                                placeholder="Ketik namamu di sini..."
+                                className="w-full text-center text-xl p-4 rounded-xl border-2 border-gray-300 focus:border-blue-500 focus:outline-none font-bold mb-6"
+                                maxLength="15"
+                            />
+                            <button 
+                                onClick={() => { 
+                                    if(playerName.trim()) {
+                                        AudioEngine.playClick(); 
+                                        setGameState('MENU'); 
+                                    }
+                                }}
+                                disabled={!playerName.trim()}
+                                className={`btn-3d w-full cartoon-font text-xl py-4 rounded-xl border-b-4 text-white
+                                    ${playerName.trim() ? 'bg-orange-500 hover:bg-orange-600 border-orange-700' : 'bg-gray-400 border-gray-500 cursor-not-allowed'}`}
+                            >
+                                LANJUT 🚀
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            // Screen: MENU
+            if (gameState === 'MENU') {
+                return (
+                    <div className="game-container items-center justify-center bg-gradient-to-br from-green-300 to-blue-300">
+                        <div className="absolute top-4 right-4 flex gap-2">
+                            <button onClick={toggleAudio} className="bg-white p-3 rounded-full shadow-lg text-xl hover:bg-gray-100">
+                                {audioEnabled ? '🔊' : '🔇'}
+                            </button>
+                            <button onClick={toggleFullscreen} className="bg-white p-3 rounded-full shadow-lg text-xl hover:bg-gray-100">
+                                ⛶
+                            </button>
+                        </div>
+                        <div className="text-center mb-8">
+                            <h1 className="text-4xl text-white cartoon-font drop-shadow-lg mb-2">Halo, {playerName}!</h1>
+                            <p className="text-xl text-white font-bold drop-shadow-md">Pilih tujuanmu:</p>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-[90%] max-w-2xl">
+                            <button onClick={startGame} className="btn-3d bg-yellow-400 hover:bg-yellow-500 p-6 rounded-2xl border-b-4 border-yellow-600 flex flex-col items-center gap-2">
+                                <span className="text-5xl">▶️</span>
+                                <span className="cartoon-font text-xl text-yellow-900">MAIN SEKARANG</span>
+                            </button>
+                            <button onClick={() => {AudioEngine.playClick(); setGameState('MATERI');}} className="btn-3d bg-blue-400 hover:bg-blue-500 p-6 rounded-2xl border-b-4 border-blue-600 flex flex-col items-center gap-2">
+                                <span className="text-5xl">📚</span>
+                                <span className="cartoon-font text-xl text-blue-900">BACA MATERI</span>
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            // Screen: MATERI
+            if (gameState === 'MATERI') {
+                return (
+                    <div className="game-container p-6 bg-yellow-50 overflow-y-auto block h-full">
+                        <div className="max-w-3xl mx-auto pb-20 pt-10">
+                            <h2 className="text-4xl cartoon-font text-center text-blue-600 mb-8">📚 BUKU PINTAR NORMA</h2>
+                            
+                            <div className="bg-white p-6 rounded-2xl shadow-md mb-6 border-l-8 border-blue-500">
+                                <h3 className="text-2xl cartoon-font text-blue-800 mb-2">Apa itu Norma?</h3>
+                                <p className="text-lg text-gray-700">Norma adalah aturan atau pedoman yang mengatur perilaku manusia agar kehidupan bersama berjalan tertib, aman, dan harmonis.</p>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="bg-white p-6 rounded-2xl shadow-md border-t-8 border-yellow-400">
+                                    <h3 className="text-xl cartoon-font text-yellow-600 mb-2">☪️ Norma Agama</h3>
+                                    <p className="text-gray-600 mb-2">Bersumber dari wahyu Tuhan. Berisi perintah dan larangan.</p>
+                                    <p className="text-sm font-bold bg-yellow-100 p-2 rounded">Contoh: Rajin beribadah, berdoa.</p>
+                                    <p className="text-sm text-red-500 mt-1">Sanksi: Dosa.</p>
+                                </div>
+                                <div className="bg-white p-6 rounded-2xl shadow-md border-t-8 border-green-400">
+                                    <h3 className="text-xl cartoon-font text-green-600 mb-2">❤️ Norma Kesusilaan</h3>
+                                    <p className="text-gray-600 mb-2">Bersumber dari hati nurani manusia tentang baik dan buruk.</p>
+                                    <p className="text-sm font-bold bg-green-100 p-2 rounded">Contoh: Berlaku jujur, tidak menyontek.</p>
+                                    <p className="text-sm text-red-500 mt-1">Sanksi: Rasa menyesal/bersalah.</p>
+                                </div>
+                                <div className="bg-white p-6 rounded-2xl shadow-md border-t-8 border-purple-400">
+                                    <h3 className="text-xl cartoon-font text-purple-600 mb-2">🤝 Norma Kesopanan</h3>
+                                    <p className="text-gray-600 mb-2">Bersumber dari kebiasaan pergaulan di masyarakat.</p>
+                                    <p className="text-sm font-bold bg-purple-100 p-2 rounded">Contoh: Menghormati orang tua, salam.</p>
+                                    <p className="text-sm text-red-500 mt-1">Sanksi: Dikucilkan, dicemooh.</p>
+                                </div>
+                                <div className="bg-white p-6 rounded-2xl shadow-md border-t-8 border-red-400">
+                                    <h3 className="text-xl cartoon-font text-red-600 mb-2">⚖️ Norma Hukum</h3>
+                                    <p className="text-gray-600 mb-2">Dibuat oleh lembaga resmi negara. Sifatnya memaksa.</p>
+                                    <p className="text-sm font-bold bg-red-100 p-2 rounded">Contoh: Memakai helm, taat pajak.</p>
+                                    <p className="text-sm text-red-500 mt-1">Sanksi: Denda, penjara.</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div className="absolute bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur flex justify-center border-t border-gray-200 shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.1)]">
+                            <button onClick={() => {AudioEngine.playClick(); setGameState('MENU');}} className="btn-3d bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-8 rounded-xl border-b-4 border-gray-700 mx-2">
+                                KEMBALI
+                            </button>
+                            <button onClick={() => {AudioEngine.playClick(); startGame();}} className="btn-3d bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-8 rounded-xl border-b-4 border-green-700 mx-2">
+                                MULAI MAIN
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (gameState === 'PLAY') {
+                const currentQ = questions[currentQuestionIndex];
+                const progress = ((currentQuestionIndex) / questions.length) * 100;
+
+                return (
+                    <div ref={containerRef} className={`game-container ${animState === 'WRONG' ? 'anim-shake' : ''}`}>
+                        {/* Background Elements */}
+                        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                            <div className="cloud top-10 left-10 text-6xl">☁️</div>
+                            <div className="cloud top-20 left-[40vw] text-8xl" style={{animationDuration: '20s'}}>☁️</div>
+                            <div className="cloud top-5 left-[80vw] text-5xl" style={{animationDuration: '15s'}}>☁️</div>
+                            
+                            {/* Sun */}
+                            <div className="absolute top-5 right-5 text-7xl animate-spin" style={{animationDuration: '20s'}}>☀️</div>
+
+                            {/* Water at bottom */}
+                            <div className="absolute bottom-0 left-0 right-0 h-32 bg-blue-500/50 flex items-end">
+                                <svg className="animate-wave w-[200%] h-16 fill-blue-600 opacity-80" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 320" preserveAspectRatio="none">
+                                    <path d="M0,160L48,176C96,192,192,224,288,213.3C384,203,480,149,576,144C672,139,768,181,864,197.3C960,213,1056,203,1152,176C1248,149,1344,107,1392,85.3L1440,64L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z"></path>
+                                </svg>
+                            </div>
+                        </div>
+
+                        {/* Flash effect for wrong answer */}
+                        {animState === 'WRONG' && <div className="anim-flash bg-red-500"></div>}
+                        {animState === 'WRONG' && <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-9xl z-50">⚡</div>}
+
+
+                        {/* Header UI */}
+                        <div className="relative z-10 p-4 flex justify-between items-start">
+                            <div className="flex gap-4">
+                                <div className="bg-white/90 px-4 py-2 rounded-xl shadow-md border-2 border-yellow-400">
+                                    <span className="text-yellow-600 font-bold">SKOR</span>
+                                    <div className="cartoon-font text-2xl text-yellow-800">{score}</div>
+                                </div>
+                                <div className="bg-white/90 px-4 py-2 rounded-xl shadow-md border-2 border-red-400 flex flex-col items-center">
+                                    <span className="text-red-500 font-bold text-xs">NYAWA</span>
+                                    <div className="text-2xl mt-1 flex gap-1">
+                                        {[...Array(3)].map((_, i) => (
+                                            <span key={i} className={i < lives ? '' : 'grayscale opacity-30'}>❤️</span>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div className="flex flex-col items-end gap-2">
+                                <div className="flex gap-2">
+                                    <button onClick={toggleAudio} className="bg-white/90 p-2 rounded-full shadow-md text-sm border-2 border-gray-300">
+                                        {audioEnabled ? '🔊' : '🔇'}
+                                    </button>
+                                    <button onClick={toggleFullscreen} className="bg-white/90 p-2 rounded-full shadow-md text-sm border-2 border-gray-300">
+                                        ⛶
+                                    </button>
+                                </div>
+                                <div className="bg-blue-600 text-white px-3 py-1 rounded-full text-sm font-bold shadow border-2 border-blue-800">
+                                    LEVEL {currentLevel}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Progress Bar */}
+                        <div className="w-full px-4 mb-2 z-10 relative">
+                            <div className="w-full bg-gray-200 rounded-full h-4 shadow-inner border-2 border-gray-300">
+                                <div className="bg-green-500 h-2.5 rounded-full mt-0.5 ml-0.5 transition-all duration-500" style={{ width: `${progress}%` }}></div>
+                            </div>
+                            <div className="text-center text-xs font-bold text-gray-700 mt-1 text-shadow-white">
+                                SOAL {currentQuestionIndex + 1} / {questions.length}
+                            </div>
+                        </div>
+
+                        {/* Question Box */}
+                        <div className="relative z-10 mx-auto w-[90%] max-w-3xl bg-white rounded-2xl shadow-xl p-4 md:p-6 border-4 border-blue-400 mt-2">
+                            <p className="text-lg md:text-2xl text-center text-gray-800 font-bold leading-snug">
+                                {currentQ?.text}
+                            </p>
+                            {streak > 1 && (
+                                <div className="absolute -top-4 -right-4 bg-orange-500 text-white text-xs px-3 py-1 rounded-full border-2 border-white shadow-lg transform rotate-12 cartoon-font animate-bounce">
+                                    {streak}x STREAK 🔥
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex-1 relative z-10 flex w-full max-w-5xl mx-auto mt-4 px-4 pb-20">
+                            
+                            {/* Snake Character Area (Left Side) */}
+                            <div className="w-1/4 h-full relative flex items-center justify-center">
+                                {/* Base rock for snake */}
+                                <div className="absolute bottom-10 w-24 h-12 bg-gray-600 rounded-full blur-[2px]"></div>
+                                
+                                <div 
+                                    className={`text-6xl md:text-8xl transition-all duration-700 absolute z-30 drop-shadow-2xl
+                                        ${animState === 'CORRECT' ? 'anim-snake-dance' : ''}
+                                        ${animState === 'WRONG' ? 'grayscale brightness-50 transform rotate-12' : 'animate-float'}
+                                    `}
+                                    style={{
+                                        // Simple logical positioning based on selected answer for effect
+                                        // In a real physics game this would be coordinates. Here we use CSS transform.
+                                        transform: animState === 'MOVING' || animState === 'CORRECT' || animState === 'WRONG' 
+                                            ? `translate(50vw, ${selectedPlatform === 0 ? '-15vh' : selectedPlatform === 1 ? '5vh' : selectedPlatform === 2 ? '25vh' : '45vh'}) scale(0.8)` 
+                                            : 'translate(0, 0)'
+                                    }}
+                                >
+                                    {animState === 'WRONG' ? '😵' : '🐍'}
+                                </div>
+                            </div>
+
+                            {/* Platforms Area (Right Side) */}
+                            <div className="w-3/4 h-full flex flex-col justify-between gap-3 py-4 relative">
+                                {currentOptions.map((opt, index) => {
+                                    const isSelected = selectedPlatform === index;
+                                    const isDropped = animState === 'WRONG' && isSelected;
+                                    
+                                    return (
+                                        <button 
+                                            key={index}
+                                            onClick={() => handleAnswer(index, index)}
+                                            disabled={animState !== 'IDLE'}
+                                            className={`relative w-full platform p-2 md:p-4 text-left group
+                                                ${isDropped ? 'anim-drop' : ''}
+                                                ${animState !== 'IDLE' && !isSelected ? 'opacity-50 grayscale' : ''}
+                                                hover:-translate-y-1 hover:brightness-110 active:translate-y-2 focus:outline-none
+                                            `}
+                                        >
+                                            <div className="grass-top"></div>
+                                            
+                                            <div className="flex items-center gap-4 relative z-10">
+                                                {/* Mouse Character */}
+                                                <div className={`text-4xl md:text-5xl drop-shadow-md transition-transform
+                                                    ${animState === 'WRONG' && isSelected ? 'anim-mouse-laugh' : ''}
+                                                    ${animState === 'CORRECT' && isSelected ? 'opacity-0 scale-0' : 'opacity-100 scale-100'}
+                                                `}>
+                                                    🐭
+                                                </div>
+                                                
+                                                {/* Answer Text */}
+                                                <div className="bg-white/90 w-full rounded-xl p-3 shadow-sm border-2 border-yellow-200">
+                                                    <span className="font-bold text-yellow-700 text-lg md:text-xl mr-2">
+                                                        {['A', 'B', 'C', 'D'][index]}.
+                                                    </span>
+                                                    <span className="text-gray-800 font-bold md:text-lg">
+                                                        {opt.text}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* Explanation Modal (Overlay) */}
+                        {showExplanation && (
+                            <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                                <div className="bg-white p-6 md:p-8 rounded-3xl max-w-md w-full text-center shadow-2xl transform scale-100 animate-[bounce_0.5s_ease-out]">
+                                    <h3 className={`text-3xl cartoon-font mb-4 ${explanationData.isCorrect ? 'text-green-500' : 'text-red-500'}`}>
+                                        {explanationData.title}
+                                    </h3>
+                                    <div className="text-6xl mb-4">
+                                        {explanationData.isCorrect ? '🌟' : '💡'}
+                                    </div>
+                                    <p className="text-gray-700 text-lg font-bold mb-4 leading-relaxed italic text-blue-600">
+                                         {explanationData.isCorrect ? explanationData.correctText : explanationData.wrongText}
+                                    </p>
+                                    <div className="bg-gray-100 p-4 rounded-xl border border-gray-300 mb-8">
+                                         <span className="font-bold text-gray-800 block mb-2">{explanationData.isCorrect ? '🌟 PEMBAHASAN' : '💡 BELAJAR LAGI'}</span>
+                                        <p className="text-gray-700 text-md leading-relaxed">
+                                            {explanationData.text}
+                                        </p>
+                                    </div>
+                                    <button 
+                                        onClick={nextQuestion}
+                                        className="btn-3d w-full bg-blue-500 hover:bg-blue-600 text-white cartoon-font text-xl py-4 rounded-xl border-b-4 border-blue-700"
+                                    >
+                                        LANJUTKAN ➡️
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            }
+
+            if (gameState === 'GAMEOVER' || gameState === 'LEVEL_COMPLETE' || gameState === 'WIN') {
+                const isWin = gameState === 'WIN';
+                const isLevelUp = gameState === 'LEVEL_COMPLETE';
+                
+                // Calculate final stats
+                const totalAnswered = stats.correct + stats.wrong;
+                const percentage = totalAnswered > 0 ? Math.round((stats.correct / totalAnswered) * 100) : 0;
+                let finalGrade = 0;
+                let stars = '⭐';
+                let message = "Jangan menyerah! Ayo belajar lagi tentang Norma dan Aturan.";
+
+                if (isWin || isLevelUp) {
+                     finalGrade = percentage;
+                     if (percentage >= 90) { stars = '⭐⭐⭐'; message = "Luar biasa! Kamu sudah memahami pentingnya norma dan aturan dalam kehidupan sehari-hari."; }
+                     else if (percentage >= 70) { stars = '⭐⭐'; message = "Hebat! Kamu semakin memahami norma dan aturan."; }
+                     else { stars = '⭐'; message = "Bagus! Terus berlatih agar lebih paham."; }
+                }
+
+                return (
+                    <div className="game-container items-center justify-center bg-gradient-to-t from-gray-800 to-blue-900 overflow-y-auto py-10">
+                        <div className="bg-white p-6 md:p-8 rounded-3xl shadow-2xl max-w-lg w-[90%] text-center border-8 border-gray-200 relative overflow-hidden my-auto">
+                            
+                            {/* Decorative background elements inside modal */}
+                            <div className="absolute top-[-20px] right-[-20px] text-8xl opacity-10 transform rotate-45 pointer-events-none">
+                                {isWin ? '🏆' : isLevelUp ? '⭐' : '💀'}
+                            </div>
+
+                            <h1 className={`text-3xl md:text-4xl cartoon-font mb-2 
+                                ${isWin ? 'text-yellow-500' : isLevelUp ? 'text-green-500' : 'text-red-500'}`}>
+                                {isWin ? 'PETUALANGAN SELESAI!' : isLevelUp ? 'LEVEL SELESAI!' : 'GAME OVER'}
+                            </h1>
+                            
+                            <p className="text-gray-600 font-bold mb-6 text-sm md:text-base">
+                                {isWin ? message : 
+                                 isLevelUp ? `Hebat, ${playerName}! Siap untuk tantangan berikutnya?` : 
+                                 message}
+                            </p>
+
+                            <div className="bg-gray-100 rounded-2xl p-4 md:p-6 mb-6 border-2 border-gray-300">
+                                <div className="text-sm text-gray-500 font-bold mb-2 uppercase tracking-wide">Laporan Hasil Belajar</div>
+                                
+                                <div className="text-lg font-bold text-gray-800 mb-4 border-b-2 border-gray-200 pb-2">
+                                     Pemain: <span className="text-blue-600">{playerName}</span>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4 mb-4 text-left">
+                                     <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+                                         <div className="text-xs text-gray-500 font-bold">Skor Akhir</div>
+                                         <div className="text-2xl cartoon-font text-blue-600">{score}</div>
+                                     </div>
+                                     <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+                                         <div className="text-xs text-gray-500 font-bold">Nilai</div>
+                                         <div className="text-2xl cartoon-font text-green-600">{finalGrade}</div>
+                                     </div>
+                                     <div className="bg-green-50 p-3 rounded-lg shadow-sm border border-green-200">
+                                         <div className="text-xs text-green-700 font-bold">Benar</div>
+                                         <div className="text-xl font-bold text-green-600">{stats.correct}</div>
+                                     </div>
+                                     <div className="bg-red-50 p-3 rounded-lg shadow-sm border border-red-200">
+                                         <div className="text-xs text-red-700 font-bold">Salah</div>
+                                         <div className="text-xl font-bold text-red-600">{stats.wrong}</div>
+                                     </div>
+                                </div>
+                                
+                                <div className="mb-2">
+                                     <div className="text-xs text-gray-500 font-bold mb-1">Keberhasilan</div>
+                                     <div className="w-full bg-gray-200 rounded-full h-4 shadow-inner">
+                                         <div className="bg-blue-500 h-4 rounded-full transition-all duration-1000" style={{ width: `${percentage}%` }}></div>
+                                     </div>
+                                     <div className="text-sm font-bold text-gray-700 mt-1">{percentage}%</div>
+                                </div>
+
+                                <div className="flex justify-center gap-2 text-4xl mt-4 drop-shadow-md">
+                                    {stars}
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col gap-3">
+                                {isLevelUp && (
+                                    <button 
+                                        onClick={() => {AudioEngine.playClick(); resetGame(currentLevel + 1);}}
+                                        className="btn-3d w-full bg-green-500 hover:bg-green-600 text-white cartoon-font text-lg py-3 rounded-xl border-b-4 border-green-700"
+                                    >
+                                        LANJUT LEVEL {currentLevel + 1} 🚀
+                                    </button>
+                                )}
+                                
+                                <button 
+                                    onClick={() => {AudioEngine.playClick(); resetGame(isLevelUp ? currentLevel : 1);}}
+                                    className="btn-3d w-full bg-yellow-400 hover:bg-yellow-500 text-yellow-900 cartoon-font text-lg py-3 rounded-xl border-b-4 border-yellow-600 flex items-center justify-center gap-2"
+                                >
+                                    <span>🔄</span> MAIN LAGI
+                                </button>
+                                
+                                <button 
+                                    onClick={() => {AudioEngine.playClick(); setGameState('MENU');}}
+                                    className="btn-3d w-full bg-gray-400 hover:bg-gray-500 text-white cartoon-font text-lg py-3 rounded-xl border-b-4 border-gray-600 flex items-center justify-center gap-2"
+                                >
+                                    <span>🏠</span> MENU UTAMA
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return <div>Loading...</div>;
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
